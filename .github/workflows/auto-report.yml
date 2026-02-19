@@ -48,6 +48,8 @@ jobs:
       - name: Set up Report Directory and Timestamp
         id: vars
         run: |
+          export TZ="Europe/Zurich"
+
           # Creates a unique timestamp like 2026-02-19_14-30-00
           TIMESTAMP=$(date +'%Y-%m-%d_%H-%M-%S')
           REPORT_DIR="documentation/github-actions-reports/$TIMESTAMP"
