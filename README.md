@@ -1,5 +1,11 @@
 # Documentazione e Struttura del Progetto
 
+## 🎋 Branches
+La repository contiene almeno 4 Branches
+- **`Main`**: Questa branch contiene codice che funziona completamente --> Mergiare quì solo da `develop` e solo se funziona
+- **`Develop`**: Questa branch comune contiene codice che potrebbe non funzionare completamente. --> Mergiare quì solo da `krit` e `daniele` una volta che la persona è felice con il risultato della sua branch
+- **`krit`** e **`daniele`**: Spazio di lavoro individuale. Il codice quì può essere modificato a piacimento. L'altra persona non controllerà e non si interesserà del contenuto della stessa. 
+
 ## 🛠 Requisiti di Sistema
 
 Il progetto è configurato per utilizzare **Java Development Kit (JDK) 25**.
