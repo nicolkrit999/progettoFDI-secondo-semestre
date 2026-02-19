@@ -1,0 +1,130 @@
+name: Auto Format and Report
+
+on:
+  push:
+    branches:
+      - develop # Only runs when pushing to the develop branch
+  workflow_dispatch:
+
+jobs:
+  process-and-report:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'oracle'
+          java-version: '25'
+
+      - name: Auto-Create pom.xml if missing
+        run: |
+          if [ ! -f "src/pom.xml" ]; then
+            echo "pom.xml not found. Generating a default one..."
+            cat <<EOF > src/pom.xml
+          <project xmlns="http://maven.apache.org/POM/4.0.0"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>com.progetto</groupId>
+              <artifactId>fdi-project</artifactId>
+              <version>1.0-SNAPSHOT</version>
+              <properties>
+                  <maven.compiler.source>25</maven.compiler.source>
+                  <maven.compiler.target>25</maven.compiler.target>
+              </properties>
+          </project>
+          EOF
+          else
+            echo "pom.xml already exists. Skipping creation."
+          fi
+
+      - name: Set up Report Directory and Timestamp
+        id: vars
+        run: |
+          # Creates a unique timestamp like 2026-02-19_14-30-00
+          TIMESTAMP=$(date +'%Y-%m-%d_%H-%M-%S')
+          REPORT_DIR="documentation/github-actions-reports/$TIMESTAMP"
+          mkdir -p "$REPORT_DIR"
+
+          # Saves variables for later steps to use
+          echo "report_dir=$REPORT_DIR" >> $GITHUB_ENV
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_ENV
+
+      - name: Format Markdown Files
+        continue-on-error: true
+        run: npx prettier --write "**/*.md" || true
+
+      - name: Format Java Files
+        continue-on-error: true
+        run: |
+          wget https://github.com/google/google-java-format/releases/download/v1.22.0/google-java-format-1.22.0-all-deps.jar
+          find . -name "*.java" -exec java -jar google-java-format-1.22.0-all-deps.jar --replace {} + || true
+
+      - name: Compile Java Classes (Best Effort)
+        continue-on-error: true
+        run: |
+          cd src
+          mvn clean compile -Dmaven.compiler.failOnError=false || true
+
+      - name: Run Tests Automatically
+        continue-on-error: true
+        run: |
+          echo "# Test Results" > ${{ env.report_dir }}/test-results.md
+          echo "" >> ${{ env.report_dir }}/test-results.md
+          echo "\`\`\`text" >> ${{ env.report_dir }}/test-results.md
+
+          cd src
+          if [ -d "test/java" ]; then
+            mvn test -Dmaven.test.failure.ignore=true | tee -a ../${{ env.report_dir }}/test-results.md || true
+          else
+            echo "No test files found." >> ../${{ env.report_dir }}/test-results.md
+          fi
+
+          echo "\`\`\`" >> ../${{ env.report_dir }}/test-results.md
+
+      - name: Run Java Simulation
+        continue-on-error: true
+        run: |
+          echo "# Simulation Results" > ${{ env.report_dir }}/simulation-results.md
+          echo "" >> ${{ env.report_dir }}/simulation-results.md
+          echo "\`\`\`text" >> ${{ env.report_dir }}/simulation-results.md
+
+          cd src
+          # Attempts to run the SimulationRunner class. Fails gracefully if it doesn't exist.
+          mvn exec:java -Dexec.mainClass="simulation.SimulationRunner" -Dexec.classpathScope=runtime | tee -a ../${{ env.report_dir }}/simulation-results.md || echo "SimulationRunner.java not found or failed to compile." >> ../${{ env.report_dir }}/simulation-results.md
+
+          echo "\`\`\`" >> ../${{ env.report_dir }}/simulation-results.md
+
+      - name: Update Report Index File
+        run: |
+          INDEX_FILE="documentation/github-actions-reports/README.md"
+
+          # Create the file with a header if it doesn't exist yet
+          if [ ! -f "$INDEX_FILE" ]; then
+            echo "# GitHub Actions Reports Log" > "$INDEX_FILE"
+            echo "Chronological list of all automated test and simulation runs:" >> "$INDEX_FILE"
+            echo "" >> "$INDEX_FILE"
+          fi
+
+          # Append the new report link
+          echo "- [Report ${{ env.timestamp }}](./${{ env.timestamp }})" >> "$INDEX_FILE"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: auto-format, pom.xml check, and generate reports for ${{ env.timestamp }}"
+          title: "Automated Report: ${{ env.timestamp }}"
+          body: |
+            Automated updates from your push to \`develop\`:
+            - **Formatting:** Markdown and Java files formatted.
+            - **POM:** `pom.xml` checked/generated.
+            - **Reports:** Find test and simulation results in \`${{ env.report_dir }}\`. Check the [Index File](documentation/github-actions-reports/README.md) for the full history.
+          branch: automated-reports-${{ env.timestamp }}
+          delete-branch: true
